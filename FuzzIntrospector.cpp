@@ -926,9 +926,9 @@ void FuzzIntrospector::runIntrospectorOnNonFuzzerBinary(Module &M) {
 // Function entrypoint.
 bool FuzzIntrospector::runOnModule(Module &M) {
   // Require that FUZZ_INTROSPECTOR environment variable is set
-  if (!getenv("FUZZ_INTROSPECTOR")) {
-    return false;
-  }
+  // if (!getenv("FUZZ_INTROSPECTOR")) {
+  //   return false;
+  // }
   logPrintf(L1, "Fuzz introspector is running\n");
   if (!getenv("FUZZ_INTROSPECTOR_CONFIG_NO_DEFAULT")) {
     makeDefaultConfig();
