@@ -13,28 +13,33 @@ limitations under the License.
 #ifndef _INSPECTOR_INCLUDES_
 #define _INSPECTOR_INCLUDES_
 
-
 // LLVM include
-//#include "llvm/Pass.h"
-#include "llvm/IR/PassManager.h"
+// #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/CommandLine.h"
 
 // Namespace
 using namespace std;
 
 namespace llvm {
-	Pass *createFuzzIntrospectorPass();
+Pass *createFuzzIntrospectorPass();
 
-  class FuzzIntrospectorPass : public PassInfoMixin<FuzzIntrospectorPass> {
-  public:
-    PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
-  };
-}
+enum class ConstraintType {
+  EXACT_MATCH,     // 精确匹配类 (CMPLOG 极强)
+  ARITHMETIC,      // 算术运算类 (符号执行极强)
+  FLOATING_POINT,  // 浮点运算类 (梯度下降极强)
+  COMPLEX_BITWISE, // 位操作/哈希类 (集体短板)
+  UNKNOWN          // 无法确定的复杂类型
+};
+
+class FuzzIntrospectorPass : public PassInfoMixin<FuzzIntrospectorPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
+};
+
+} // namespace llvm
 
 #endif

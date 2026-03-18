@@ -1,95 +1,104 @@
 #include <iostream>
 #include <vector>
-#include <climits>
+#include <cstring>
+#include <stdexcept>
+#include <cstdint>
 
-using namespace std;
-class Solution {
-private:
-  int count;
-  vector<int> disabled;
-  int getMaxDistance(vector<vector<int>> &graph) {
-    auto V = graph.size();
-    if (V <= 1) {
-      return 0;
+// =====================================================================
+// 模拟一个复杂的哈希/加密函数 (用于测试 COMPLEX_BITWISE 约束)
+// =====================================================================
+uint32_t dummy_hash(const uint8_t* data, size_t len) {
+    uint32_t hash = 5381;
+    for (size_t i = 0; i < len; ++i) {
+        // 密集的位操作：左移 (Shl)、加法、异或 (Xor)
+        hash = ((hash << 5) + hash) ^ data[i]; 
     }
-    auto INF = INT_MAX;
-    int dist[V][V], i, j, k;
+    return hash;
+}
 
-    for (i = 0; i < V; i++)
-      for (j = 0; j < V; j++)
-        dist[i][j] = graph[i][j];
-
-    for (k = 0; k < V; k++) {
-      for (i = 0; i < V; i++) {
-        for (j = 0; j < V; j++) {
-          if (dist[i][k] != INF && dist[k][j] != INF &&
-              dist[i][k] + dist[k][j] < dist[i][j])
-            dist[i][j] = dist[i][k] + dist[k][j];
-        }
-      }
-    }
-
-    int maxDist = 0;
-    for (i = 0; i < V; i++) {
-      for (j = 0; j < V; j++) {
-        if (i == j) continue;
-        if (dist[i][j] == INF) return -1;
-        if (dist[i][j] > maxDist && dist[i][j] != INF)
-          maxDist = dist[i][j];
-      }
-    }
-
-    return maxDist;
-  }
-  void dfs(int n, int maxDistance, vector<vector<int>> &map) {
-    if (n == map.size()) {
-      int newMapSize = map.size();
-      for (auto t : disabled) {
-        newMapSize -= t;
-      }
-      auto copy =
-          vector<vector<int>>(newMapSize, vector<int>(newMapSize, INT_MAX));
-      for (int i = 0, _i = 0; i < map.size(); i++) {
-        if (disabled[i])
-          continue;
-        for (int j = 0, _j = 0; j < map.size(); j++) {
-          if (disabled[j])
-            continue;
-          copy[_i][_j] = map[i][j];
-          _j++;
-        }
-        _i++;
-      }
-      int r = getMaxDistance(copy);
-      if (r <= maxDistance && r >= 0) {
-
-        count++;
-      }
-      return;
-    }
-    disabled[n] = 0;
-    dfs(n + 1, maxDistance, map);
-    disabled[n] = 1;
-    dfs(n + 1, maxDistance, map);
-  }
-
-public:
-  int numberOfSets(int n, int maxDistance, vector<vector<int>> &roads) {
-    auto map = vector<vector<int>>(n, vector<int>(n, INT_MAX));
-    for (auto road : roads) {
-      map[road[0]][road[1]] = min(map[road[0]][road[1]], road[2]);
-      map[road[1]][road[0]] = min(map[road[1]][road[0]], road[2]);
-    }
-    count = 0;
-    disabled = vector<int>(n, 0);
-    dfs(0, maxDistance, map);
-    return count;
-  }
-};
-
+// =====================================================================
+// 模糊测试目标函数 (Fuzz Target)
+// =====================================================================
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  Solution s;
-  vector<vector<int>> roads = {{0,1,1},{1,2,1},{2,0,1}};
-  cout << s.numberOfSets(3, 2, roads) << endl;
-  return 0;
+    // 保证输入长度足够，避免越界
+    if (size < 24) {
+        return 0;
+    }
+
+    // ---------------------------------------------------------
+    // 噪音测试 (Noise): STL 库展开和异常处理
+    // 你的 LLVM Pass 应该通过 DebugLoc 和 isEHPad() 过滤掉它们
+    // ---------------------------------------------------------
+    try {
+        // 这行代码会在 LLVM IR 中生成几十个基本块 (内存分配、循环等)
+        std::vector<std::vector<int>> noise_matrix(5, std::vector<int>(5, 0));
+        
+        if (data[0] == 0xFF) {
+            throw std::runtime_error("Exception noise!"); // 会生成 invoke 和 landingpad
+        }
+    } catch (const std::exception& e) {
+        // 异常处理基本块
+    }
+
+    // ---------------------------------------------------------
+    // 类别 1: 精确匹配 (EXACT_MATCH) - CMPLOG 的最爱
+    // ---------------------------------------------------------
+    
+    // 1.1 Magic Bytes 比较 (直接 Load 后与常量比较)
+    uint32_t magic = *(uint32_t*)(data + 1);
+    if (magic == 0xDEADBEEF) {
+        std::cout << "Magic Bytes matched!\n";
+    }
+
+    // 1.2 字符串精确比较 (调用 strcmp)
+    const char* str_payload = (const char*)(data + 5);
+    if (std::strncmp(str_payload, "FUZZ", 4) == 0) {
+        std::cout << "String matched!\n";
+    }
+
+    // 1.3 Switch 语句精确匹配
+    uint8_t cmd = data[9];
+    switch (cmd) {
+        case 0x10: std::cout << "Command 10\n"; break;
+        case 0x20: std::cout << "Command 20\n"; break;
+        default: break;
+    }
+
+    // ---------------------------------------------------------
+    // 类别 2: 算术与代数运算 (ARITHMETIC) - 符号执行的最爱
+    // ---------------------------------------------------------
+    
+    int32_t x = data[10];
+    int32_t y = data[11];
+    // 包含乘法 (Mul)、减法 (Sub)，且最终进行 ICmp 比较
+    if ((x * 3) - y == 42) {
+        std::cout << "Arithmetic constraint solved!\n";
+    }
+
+    // ---------------------------------------------------------
+    // 类别 3: 浮点数运算 (FLOATING_POINT) - 梯度下降的最爱
+    // ---------------------------------------------------------
+    
+    // 将输入转换为浮点数并比较 (会生成 FCmpInst)
+    float f_val = *(float*)(data + 12);
+    if (f_val > 3.14159f && f_val < 3.15f) {
+        std::cout << "Floating point constraint solved!\n";
+    }
+
+    // ---------------------------------------------------------
+    // 类别 4: 位操作与哈希计算 (COMPLEX_BITWISE) - 全体 Fuzzer 短板
+    // ---------------------------------------------------------
+    
+    // 调用复杂的位运算哈希函数，比较结果
+    uint32_t target_hash = dummy_hash(data + 16, 8);
+    if (target_hash == 0x12345678) {
+        std::cout << "Complex Hash constraint solved!\n";
+    }
+    
+    // 直接在判断里的位运算 (按位与 And)
+    if ((data[20] & 0x0F) == 0x0A) {
+        std::cout << "Bitwise AND constraint solved!\n";
+    }
+
+    return 0;
 }
