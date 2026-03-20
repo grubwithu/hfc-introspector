@@ -18,15 +18,25 @@ limitations under the License.
 //#include "llvm/Pass.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Function.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/CommandLine.h"
 
 // Namespace
 using namespace std;
+
+// Structure to hold comparison information
+struct ComparisonInfo {
+  bool isRegisterImmediate; // True if comparison is register vs immediate
+  bool isRegisterRegister;  // True if comparison is register vs register
+  bool isDirectJump;        // True if it's a direct jump (no comparison)
+  std::string leftOperand;  // Left operand description
+  std::string rightOperand; // Right operand description
+  int64_t immediateValue;   // Immediate value if applicable
+};
+
+// Function to analyze control flow structures
+ComparisonInfo analyzeControlFlowInstruction(llvm::Instruction *I);
 
 namespace llvm {
 	Pass *createFuzzIntrospectorPass();

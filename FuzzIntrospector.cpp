@@ -28,9 +28,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Regex.h"
@@ -41,7 +39,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <bitset>
 #include <chrono>
 #include <cstdarg>
 #include <ctime>
@@ -50,11 +47,9 @@
 #include <set>
 #include <vector>
 
-#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
-#include "llvm/Transforms/Utils/CallGraphUpdater.h"
 
 using namespace std;
 using namespace llvm;
@@ -75,8 +70,8 @@ using namespace llvm;
  */
 
 using yaml::IO;
-using yaml::MappingTraits;
-using yaml::Output;
+// using yaml::MappingTraits;
+// using yaml::Output;
 
 // Typedefs used by the introspector pass
 typedef struct BranchSide {
@@ -87,6 +82,13 @@ typedef struct BranchSide {
 typedef struct BranchProfileEntry {
   std::string BranchString;
   std::vector<BranchSide> BranchSides;
+  // Control flow analysis information
+  bool isRegisterImmediate; // True if comparison is register vs immediate
+  bool isRegisterRegister;  // True if comparison is register vs register
+  std::string leftOperand;  // Left operand description
+  std::string rightOperand; // Right operand description
+  int64_t immediateValue;   // Immediate value if applicable
+  std::vector<int64_t> caseValues;   // Switch case values if applicable
 } BranchProfileEntry;
 
 typedef struct bCSite {
@@ -178,7 +180,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(FuzzerFunctionWrapper)
 template <>
 struct yaml::MappingTraits<FuzzerStringList> {
   static void mapping(IO &io, FuzzerStringList &l) {
-    io.mapRequired("List name", l.ListName);
+    io.mapRequired("ListName", l.ListName);
     io.mapRequired("elements", l.Elements);
   }
 };
@@ -186,7 +188,7 @@ struct yaml::MappingTraits<FuzzerStringList> {
 template <>
 struct yaml::MappingTraits<FuzzerFunctionList> {
   static void mapping(IO &io, FuzzerFunctionList &FList) {
-    io.mapRequired("Function list name", FList.ListName);
+    io.mapRequired("FunctionListName", FList.ListName);
     io.mapRequired("Elements", FList.Functions);
   }
 };
@@ -194,8 +196,8 @@ struct yaml::MappingTraits<FuzzerFunctionList> {
 template <>
 struct yaml::MappingTraits<FuzzerModuleIntrospection> {
   static void mapping(IO &io, FuzzerModuleIntrospection &introspectorModule) {
-    io.mapRequired("Fuzzer filename", introspectorModule.FuzzerFileName);
-    io.mapRequired("All functions", introspectorModule.AllFunctions);
+    io.mapRequired("FuzzerFilename", introspectorModule.FuzzerFileName);
+    io.mapRequired("AllFunctions", introspectorModule.AllFunctions);
   }
 };
 
@@ -221,8 +223,14 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(BranchSide)
 template <>
 struct yaml::MappingTraits<BranchProfileEntry> {
   static void mapping(IO &io, BranchProfileEntry &bpe) {
-    io.mapRequired("Branch String", bpe.BranchString);
-    io.mapRequired("Branch Sides", bpe.BranchSides);
+    io.mapRequired("BranchString", bpe.BranchString);
+    io.mapRequired("BranchSides", bpe.BranchSides);
+    io.mapOptional("IsRegisterImmediate", bpe.isRegisterImmediate, false);
+    io.mapOptional("IsRegisterRegister", bpe.isRegisterRegister, false);
+    io.mapOptional("LeftOperand", bpe.leftOperand, std::string(""));
+    io.mapOptional("RightOperand", bpe.rightOperand, std::string(""));
+    io.mapOptional("ImmediateValue", bpe.immediateValue, (int64_t)0);
+    io.mapOptional("CaseValues", bpe.caseValues);
   }
 };
 LLVM_YAML_IS_SEQUENCE_VECTOR(BranchProfileEntry)
@@ -387,6 +395,9 @@ struct FuzzIntrospector : public ModulePass {
                                           DebugInfoFinder &Finder, std::string yamlTarget);
   void dumpDebugAllTypes(std::ofstream &O, DebugInfoFinder &Finder, std::string);
   void dumpDebugAllGlobalVariables(std::ofstream &O, DebugInfoFinder &Finder, std::string yamlOutFile);
+
+  // Control flow analysis
+  void analyzeControlFlow(Instruction *I);
 
   // void branchProfiler(Module &M);
   std::vector<BranchProfileEntry> branchProfiler(Function *);
@@ -929,6 +940,8 @@ bool FuzzIntrospector::runOnModule(Module &M) {
   // if (!getenv("FUZZ_INTROSPECTOR")) {
   //   return false;
   // }
+  // 直接输出到标准输出，确保我们能看到
+  std::cout << "[FuzzIntrospector] Fuzz introspector is running\n";
   logPrintf(L1, "Fuzz introspector is running\n");
   if (!getenv("FUZZ_INTROSPECTOR_CONFIG_NO_DEFAULT")) {
     makeDefaultConfig();
@@ -1910,9 +1923,9 @@ FuzzerFunctionWrapper FuzzIntrospector::wrapFunction(Function *F) {
     delete cNode;
   }
 
-  if (getenv("FI_BRANCH_PROFILE")) {
-    FuncWrap.BranchProfiles = branchProfiler(F);
-  }
+  // if (getenv("FI_BRANCH_PROFILE")) {
+  FuncWrap.BranchProfiles = branchProfiler(F);
+  // }
 
   return FuncWrap;
 }
@@ -1989,6 +2002,20 @@ PreservedAnalyses FuzzIntrospectorPass::run(Module &M,
     return PreservedAnalyses::all();
   return PreservedAnalyses::none();
 }
+
+// Helper function to get a descriptive name for a value
+std::string getValueName(llvm::Value *V) {
+  if (V->hasName()) {
+    return V->getName().str();
+  } else if (llvm::Instruction *I = llvm::dyn_cast<llvm::Instruction>(V)) {
+    return std::string(I->getOpcodeName());
+  } else if (llvm::Argument *A = llvm::dyn_cast<llvm::Argument>(V)) {
+    return "arg" + std::to_string(A->getArgNo());
+  } else {
+    return "unknown";
+  }
+}
+
 /*
  *
  *
@@ -2035,6 +2062,8 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
       auto ReachableFuncs0 = findReachableFuncs(Side0);
       auto ReachableFuncs1 = findReachableFuncs(Side1);
 
+      BranchSide BranchSide0Val, BranchSide1Val;
+
       // std::pair<size_t, size_t> Complexities =
       //     findComplexities(Reachable0, Reachable1, BBComplexityMap);
 
@@ -2044,37 +2073,82 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
       std::pair<std::string, std::string> DbgExtracts;
       DbgExtracts = getInsnDebugInfo((Instruction *)BI);
       std::string BRstring = DbgExtracts.first;
-      if (BRstring.length() == 0) {
-        continue; // Failed to get debug info
-      }
-      DbgExtracts = getBBDebugInfo(Side0, BILoc);
-      std::string Side0String = DbgExtracts.first;
-      if (Side0String.length() == 0)
-        continue;
-      auto Side0Line = std::stoi(DbgExtracts.second);
-      DbgExtracts = getBBDebugInfo(Side1, BILoc);
-      std::string Side1String = DbgExtracts.first;
-      if (Side1String.length() == 0)
-        continue;
-      auto Side1Line = std::stoi(DbgExtracts.second);
+      if (BRstring.size() > 0) {
+        DbgExtracts = getBBDebugInfo(Side0, BILoc);
+        std::string Side0String = DbgExtracts.first;
+        int Side0Line = 0;
+        if (Side0String.length() > 0) {
+          BranchSide0Val.BranchSideString = Side0String;
+          BranchSide0Val.BranchSideFuncs = ReachableFuncs0;
+          Side0Line = std::stoi(DbgExtracts.second);
+        }
+        DbgExtracts = getBBDebugInfo(Side1, BILoc);
+        std::string Side1String = DbgExtracts.first;
+        int Side1Line = 0;
+        if (Side1String.length() > 0) {
+          BranchSide1Val.BranchSideString = Side1String;
+          BranchSide1Val.BranchSideFuncs = ReachableFuncs1;
+          Side1Line = std::stoi(DbgExtracts.second);
+        }
 
-      // Invariant: side line numbers are ascending.
-      std::string TmpString;
-      std::vector<StringRef> *TmpFuncs;
-      if (Side0Line > Side1Line) {
-        TmpString = Side1String;
-        TmpFuncs = &ReachableFuncs1;
-        Side1String = Side0String;
-        ReachableFuncs1 = ReachableFuncs0;
-        Side0String = TmpString;
-        ReachableFuncs0 = *TmpFuncs;
+        if (Side0Line > Side1Line) {
+          std::swap(BranchSide0Val, BranchSide1Val);
+        }
+
       }
 
+      // Analyze control flow for this branch instruction
+      bool isRegisterImmediate = false;
+      bool isRegisterRegister = false;
+      std::string leftOperand = "";
+      std::string rightOperand = "";
+      int64_t immediateValue = 0;
+      std::vector<int64_t> caseValues;
+      
+      // Check if condition is a comparison instruction
+      Value *Condition = BI->getCondition();
+      if (CmpInst *CI = dyn_cast<CmpInst>(Condition)) {
+        Value *LHS = CI->getOperand(0);
+        Value *RHS = CI->getOperand(1);
+        
+        // Check if LHS is a register (Instruction or Argument)
+        bool lhsIsRegister = isa<Instruction>(LHS) || isa<Argument>(LHS);
+        // Check if RHS is a register (Instruction or Argument)
+        bool rhsIsRegister = isa<Instruction>(RHS) || isa<Argument>(RHS);
+        // Check if RHS is an immediate value
+        bool rhsIsImmediate = isa<ConstantInt>(RHS);
+        // Check if LHS is an immediate value
+        bool lhsIsImmediate = isa<ConstantInt>(LHS);
+        
+        if (lhsIsRegister && rhsIsImmediate) {
+          // Register vs immediate comparison
+          isRegisterImmediate = true;
+          leftOperand = getValueName(LHS);
+          rightOperand = "immediate";
+          if (ConstantInt *CImm = dyn_cast<ConstantInt>(RHS)) {
+            immediateValue = CImm->getSExtValue();
+          }
+        } else if (rhsIsRegister && lhsIsImmediate) {
+          // Immediate vs register comparison (swap them)
+          isRegisterImmediate = true;
+          leftOperand = getValueName(RHS);
+          rightOperand = "immediate";
+          if (ConstantInt *CImm = dyn_cast<ConstantInt>(LHS)) {
+            immediateValue = CImm->getSExtValue();
+          }
+        } else if (lhsIsRegister && rhsIsRegister) {
+          // Register vs register comparison
+          isRegisterRegister = true;
+          leftOperand = getValueName(LHS);
+          rightOperand = getValueName(RHS);
+        }
+      }
+      
       // BranchSidesComplexity Entry_val(TrueSideString, *TrueSideFuncs,
       //                                 FalseSideString, *FalseSideFuncs);
-      BranchSide BranchSide0Val = {Side0String, ReachableFuncs0};
-      BranchSide BranchSide1Val = {Side1String, ReachableFuncs1};
-      BranchProfileEntry Entry = {BRstring, {BranchSide0Val, BranchSide1Val}};
+      BranchProfileEntry Entry = {BRstring, {BranchSide0Val, BranchSide1Val}, 
+                                 isRegisterImmediate, isRegisterRegister, 
+                                 leftOperand, rightOperand, immediateValue, caseValues};
       FuncBranchProfile.push_back(Entry);
     }
     // Check for switch statements.
@@ -2107,6 +2181,30 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
           [](const pair<BasicBlock *, int> &a,
              const pair<BasicBlock *, int> &b) { return a.second < b.second; });
 
+      // Analyze control flow for this switch instruction
+      bool isRegisterImmediate = false;
+      bool isRegisterRegister = false;
+      std::string leftOperand = "";
+      std::string rightOperand = "";
+      int64_t immediateValue = 0;
+      std::vector<int64_t> caseValues;
+      
+      // Check if switch value is a register (Instruction or Argument)
+      Value *SwitchValue = SI->getCondition();
+      if (isa<Instruction>(SwitchValue) || isa<Argument>(SwitchValue)) {
+        isRegisterImmediate = true;
+        leftOperand = getValueName(SwitchValue);
+        rightOperand = "switch cases";
+        
+        // Extract immediate values from switch cases
+        for (auto caseIt = SI->case_begin(); caseIt != SI->case_end(); ++caseIt) {
+          const llvm::ConstantInt *CaseValue = caseIt->getCaseValue();
+          if (CaseValue) {
+            caseValues.push_back(CaseValue->getSExtValue());
+          }
+        }
+      }
+      
       std::vector<BranchSide> SwitchBranchSides;
       for (auto &pr : Dest_pairs) {
         auto CurrDest = pr.first;
@@ -2114,7 +2212,9 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
         auto CurrDestString = DestStringsMap[CurrDest];
         SwitchBranchSides.push_back({CurrDestString, CurrFuncs});
       }
-      BranchProfileEntry Entry = {BRstring, SwitchBranchSides};
+      BranchProfileEntry Entry = {BRstring, SwitchBranchSides, 
+                                 isRegisterImmediate, isRegisterRegister, 
+                                 leftOperand, rightOperand, immediateValue, caseValues};
       FuncBranchProfile.push_back(Entry);
     }
   }

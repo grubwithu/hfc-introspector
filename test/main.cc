@@ -1,95 +1,93 @@
 #include <iostream>
 #include <vector>
-#include <climits>
 
-using namespace std;
-class Solution {
-private:
-  int count;
-  vector<int> disabled;
-  int getMaxDistance(vector<vector<int>> &graph) {
-    auto V = graph.size();
-    if (V <= 1) {
+// 测试类，包含各种控制流结构
+class TestControlFlow {
+public:
+  // 测试寄存器与立即数比较
+  int testRegisterImmediate(int x) {
+    if (x > 10) {
+      return 1;
+    } else if (x == 0) {
+      return 0;
+    } else {
+      return -1;
+    }
+  }
+
+  // 测试两个寄存器比较
+  int testRegisterRegister(int a, int b) {
+    if (a > b) {
+      return a;
+    } else if (a < b) {
+      return b;
+    } else {
       return 0;
     }
-    auto INF = INT_MAX;
-    int dist[V][V], i, j, k;
-
-    for (i = 0; i < V; i++)
-      for (j = 0; j < V; j++)
-        dist[i][j] = graph[i][j];
-
-    for (k = 0; k < V; k++) {
-      for (i = 0; i < V; i++) {
-        for (j = 0; j < V; j++) {
-          if (dist[i][k] != INF && dist[k][j] != INF &&
-              dist[i][k] + dist[k][j] < dist[i][j])
-            dist[i][j] = dist[i][k] + dist[k][j];
-        }
-      }
-    }
-
-    int maxDist = 0;
-    for (i = 0; i < V; i++) {
-      for (j = 0; j < V; j++) {
-        if (i == j) continue;
-        if (dist[i][j] == INF) return -1;
-        if (dist[i][j] > maxDist && dist[i][j] != INF)
-          maxDist = dist[i][j];
-      }
-    }
-
-    return maxDist;
-  }
-  void dfs(int n, int maxDistance, vector<vector<int>> &map) {
-    if (n == map.size()) {
-      int newMapSize = map.size();
-      for (auto t : disabled) {
-        newMapSize -= t;
-      }
-      auto copy =
-          vector<vector<int>>(newMapSize, vector<int>(newMapSize, INT_MAX));
-      for (int i = 0, _i = 0; i < map.size(); i++) {
-        if (disabled[i])
-          continue;
-        for (int j = 0, _j = 0; j < map.size(); j++) {
-          if (disabled[j])
-            continue;
-          copy[_i][_j] = map[i][j];
-          _j++;
-        }
-        _i++;
-      }
-      int r = getMaxDistance(copy);
-      if (r <= maxDistance && r >= 0) {
-
-        count++;
-      }
-      return;
-    }
-    disabled[n] = 0;
-    dfs(n + 1, maxDistance, map);
-    disabled[n] = 1;
-    dfs(n + 1, maxDistance, map);
   }
 
-public:
-  int numberOfSets(int n, int maxDistance, vector<vector<int>> &roads) {
-    auto map = vector<vector<int>>(n, vector<int>(n, INT_MAX));
-    for (auto road : roads) {
-      map[road[0]][road[1]] = min(map[road[0]][road[1]], road[2]);
-      map[road[1]][road[0]] = min(map[road[1]][road[0]], road[2]);
+  // 测试 switch 语句
+  int testSwitch(int value) {
+    switch (value) {
+      case 1:
+        return 10;
+      case 2:
+        return 20;
+      case 3:
+        return 30;
+      default:
+        return -1;
     }
-    count = 0;
-    disabled = vector<int>(n, 0);
-    dfs(0, maxDistance, map);
-    return count;
+  }
+
+  // 测试直接跳转（无条件分支）
+  void testDirectJump(bool flag) {
+    if (flag) {
+      std::cout << "Flag is true" << std::endl;
+      return; // 直接跳转到函数返回
+    }
+    std::cout << "Flag is false" << std::endl;
+  }
+
+  // 测试复杂控制流
+  int testComplexFlow(int x, int y) {
+    if (x > 5) {
+      if (y > 10) {
+        return 100;
+      } else {
+        switch (y) {
+          case 1:
+            return 101;
+          case 2:
+            return 102;
+          default:
+            return 103;
+        }
+      }
+    } else {
+      if (x == 0) {
+        return 200;
+      } else {
+        return 201;
+      }
+    }
   }
 };
 
+// 模糊测试入口点
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  Solution s;
-  vector<vector<int>> roads = {{0,1,1},{1,2,1},{2,0,1}};
-  cout << s.numberOfSets(3, 2, roads) << endl;
+  TestControlFlow test;
+  
+  // 使用输入数据生成测试值
+  int x = data[0] % 20;
+  int y = data[1] % 15;
+  
+  // 测试各种控制流结构
+  test.testRegisterImmediate(x);
+  test.testRegisterRegister(x, y);
+  test.testSwitch(x % 5);
+  test.testDirectJump(x % 2 == 0);
+  test.testComplexFlow(x, y);
+  
   return 0;
 }
