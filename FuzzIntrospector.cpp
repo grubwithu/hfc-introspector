@@ -2126,6 +2126,9 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
           leftOperand = getValueName(LHS);
           rightOperand = "immediate";
           if (ConstantInt *CImm = dyn_cast<ConstantInt>(RHS)) {
+            if (CImm->getValue().getSignificantBits() > 64) {
+              continue;
+            }
             immediateValue = CImm->getSExtValue();
           }
         } else if (rhsIsRegister && lhsIsImmediate) {
@@ -2134,6 +2137,9 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
           leftOperand = getValueName(RHS);
           rightOperand = "immediate";
           if (ConstantInt *CImm = dyn_cast<ConstantInt>(LHS)) {
+            if (CImm->getValue().getSignificantBits() > 64) {
+              continue;
+            }
             immediateValue = CImm->getSExtValue();
           }
         } else if (lhsIsRegister && rhsIsRegister) {
