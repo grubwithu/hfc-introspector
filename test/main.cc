@@ -1,3 +1,4 @@
+#include <cstring>
 #include <iostream>
 #include <vector>
 
@@ -49,6 +50,13 @@ public:
     std::cout << "Flag is false" << std::endl;
   }
 
+  void testStrCmpFunc(const std::string& str) {
+    // use strcmp
+    if (strcmp(str.c_str(), "hello") == 0) {
+      std::cout << "String is hello" << std::endl;
+    }
+  }
+
   // 测试复杂控制流
   int testComplexFlow(int x, int y) {
     if (x > 5) {
@@ -88,6 +96,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   test.testSwitch(x % 5);
   test.testDirectJump(x % 2 == 0);
   test.testComplexFlow(x, y);
+  test.testStrCmpFunc("hello");
   
   return 0;
 }

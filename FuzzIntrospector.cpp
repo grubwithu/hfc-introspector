@@ -116,6 +116,7 @@ typedef struct fuzzFuncWrapper {
   std::vector<StringRef> FunctionsReached;
   std::vector<BranchProfileEntry> BranchProfiles;
   std::vector<CSite> Callsites;
+  std::vector<std::string> StringLiterals; // String literals found in string comparison functions
 } FuzzerFunctionWrapper;
 
 typedef struct FuzzerStringList {
@@ -173,6 +174,7 @@ struct yaml::MappingTraits<FuzzerFunctionWrapper> {
     io.mapRequired("functionUses", Func.FunctionUses);
     io.mapRequired("BranchProfiles", Func.BranchProfiles);
     io.mapRequired("Callsites", Func.Callsites);
+    io.mapRequired("StringLiterals", Func.StringLiterals);
   }
 };
 LLVM_YAML_IS_SEQUENCE_VECTOR(FuzzerFunctionWrapper)
@@ -1814,6 +1816,52 @@ FuzzerFunctionWrapper FuzzIntrospector::wrapFunction(Function *F) {
           cs.dst = NormalisedDstName;
 
           FuncWrap.Callsites.push_back(cs);
+        }
+      }
+
+      // Check for string comparison functions and extract string literals
+      if (isa<CallInst>(I) || isa<InvokeInst>(I)) {
+        Function *CalledFunc = nullptr;
+        unsigned NumOperands = 0;
+        
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          CalledFunc = value2Func(CI->getCalledOperand());
+          NumOperands = CI->getNumOperands();
+        } else if (InvokeInst *II = dyn_cast<InvokeInst>(&I)) {
+          CalledFunc = value2Func(II->getCalledOperand());
+          NumOperands = II->getNumOperands();
+        }
+        
+        if (CalledFunc) {
+          StringRef FuncName = CalledFunc->getName();
+          // Check if it's a string comparison function
+          bool isStringCmpFunc = FuncName.contains("strcmp") || FuncName.contains("memcmp") || 
+                                 FuncName.contains("strncmp") || FuncName.contains("strcasecmp") || 
+                                 FuncName.contains("strstr") || FuncName.contains("strncasecmp") || 
+                                 FuncName.contains("cmp");
+          
+          if (isStringCmpFunc) {
+            // Check all arguments for string literals
+            for (unsigned i = 0; i < NumOperands - 1; i++) { // -1 to skip the function itself
+              Value *Arg = I.getOperand(i);
+              // Check if the argument is a global variable that points to a string literal
+              if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Arg)) {
+                if (GV->hasInitializer()) {
+                  Constant *Init = GV->getInitializer();
+                  if (ConstantDataArray *CDA = dyn_cast<ConstantDataArray>(Init)) {
+                    if (CDA->isString()) {
+                      std::string Literal = CDA->getAsString().str();
+                      // Remove null terminator
+                      if (!Literal.empty() && Literal.back() == '\0') {
+                        Literal.pop_back();
+                      }
+                      FuncWrap.StringLiterals.push_back(Literal);
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
