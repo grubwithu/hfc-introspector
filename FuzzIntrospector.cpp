@@ -2226,15 +2226,17 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
 
       // BranchSidesComplexity Entry_val(TrueSideString, *TrueSideFuncs,
       //                                 FalseSideString, *FalseSideFuncs);
-      BranchProfileEntry Entry = {BRstring,
-                                  {BranchSide0Val, BranchSide1Val},
-                                  isRegisterImmediate,
-                                  isRegisterRegister,
-                                  leftOperand,
-                                  rightOperand,
-                                  immediateValue,
-                                  caseValues};
-      FuncBranchProfile.push_back(Entry);
+      if (isRegisterImmediate && (immediateValue != 0 || caseValues.size() > 0)) {
+        BranchProfileEntry Entry = {BRstring,
+                                    {BranchSide0Val, BranchSide1Val},
+                                    isRegisterImmediate,
+                                    isRegisterRegister,
+                                    leftOperand,
+                                    rightOperand,
+                                    immediateValue,
+                                    caseValues};
+        FuncBranchProfile.push_back(Entry);
+      }
     }
     // Check for switch statements.
     // IR syntax: switch <intty> <value>, label <defaultdest> [ <intty> <val>,
