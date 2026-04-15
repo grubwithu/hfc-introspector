@@ -31,6 +31,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -88,7 +89,7 @@ typedef struct BranchProfileEntry {
   std::string leftOperand;  // Left operand description
   std::string rightOperand; // Right operand description
   int64_t immediateValue;   // Immediate value if applicable
-  std::vector<int64_t> caseValues;   // Switch case values if applicable
+  std::vector<int64_t> caseValues; // Switch case values if applicable
 } BranchProfileEntry;
 
 typedef struct bCSite {
@@ -116,7 +117,8 @@ typedef struct fuzzFuncWrapper {
   std::vector<StringRef> FunctionsReached;
   std::vector<BranchProfileEntry> BranchProfiles;
   std::vector<CSite> Callsites;
-  std::vector<std::string> StringLiterals; // String literals found in string comparison functions
+  std::vector<std::string>
+      StringLiterals; // String literals found in string comparison functions
 } FuzzerFunctionWrapper;
 
 typedef struct FuzzerStringList {
@@ -152,8 +154,7 @@ typedef struct BranchSidesComplexity {
 } BranchSidesComplexity;
 
 // YAML mappings for outputting the typedefs above
-template <>
-struct yaml::MappingTraits<FuzzerFunctionWrapper> {
+template <> struct yaml::MappingTraits<FuzzerFunctionWrapper> {
   static void mapping(IO &io, FuzzerFunctionWrapper &Func) {
     io.mapRequired("functionName", Func.FunctionName);
     io.mapRequired("functionSourceFile", Func.FunctionSourceFile);
@@ -179,32 +180,28 @@ struct yaml::MappingTraits<FuzzerFunctionWrapper> {
 };
 LLVM_YAML_IS_SEQUENCE_VECTOR(FuzzerFunctionWrapper)
 
-template <>
-struct yaml::MappingTraits<FuzzerStringList> {
+template <> struct yaml::MappingTraits<FuzzerStringList> {
   static void mapping(IO &io, FuzzerStringList &l) {
     io.mapRequired("ListName", l.ListName);
     io.mapRequired("elements", l.Elements);
   }
 };
 
-template <>
-struct yaml::MappingTraits<FuzzerFunctionList> {
+template <> struct yaml::MappingTraits<FuzzerFunctionList> {
   static void mapping(IO &io, FuzzerFunctionList &FList) {
     io.mapRequired("FunctionListName", FList.ListName);
     io.mapRequired("Elements", FList.Functions);
   }
 };
 
-template <>
-struct yaml::MappingTraits<FuzzerModuleIntrospection> {
+template <> struct yaml::MappingTraits<FuzzerModuleIntrospection> {
   static void mapping(IO &io, FuzzerModuleIntrospection &introspectorModule) {
     io.mapRequired("FuzzerFilename", introspectorModule.FuzzerFileName);
     io.mapRequired("AllFunctions", introspectorModule.AllFunctions);
   }
 };
 
-template <>
-struct yaml::MappingTraits<BranchSidesComplexity> {
+template <> struct yaml::MappingTraits<BranchSidesComplexity> {
   static void mapping(IO &io, BranchSidesComplexity &branchSidesComp) {
     io.mapRequired("TrueSide", branchSidesComp.TrueSideString);
     io.mapRequired("TrueSideComp", branchSidesComp.TrueSideComp);
@@ -213,8 +210,7 @@ struct yaml::MappingTraits<BranchSidesComplexity> {
   }
 };
 
-template <>
-struct yaml::MappingTraits<BranchSide> {
+template <> struct yaml::MappingTraits<BranchSide> {
   static void mapping(IO &io, BranchSide &branchSide) {
     io.mapRequired("BranchSide", branchSide.BranchSideString);
     io.mapRequired("BranchSideFuncs", branchSide.BranchSideFuncs);
@@ -222,8 +218,7 @@ struct yaml::MappingTraits<BranchSide> {
 };
 LLVM_YAML_IS_SEQUENCE_VECTOR(BranchSide)
 
-template <>
-struct yaml::MappingTraits<BranchProfileEntry> {
+template <> struct yaml::MappingTraits<BranchProfileEntry> {
   static void mapping(IO &io, BranchProfileEntry &bpe) {
     io.mapRequired("BranchString", bpe.BranchString);
     io.mapRequired("BranchSides", bpe.BranchSides);
@@ -237,8 +232,7 @@ struct yaml::MappingTraits<BranchProfileEntry> {
 };
 LLVM_YAML_IS_SEQUENCE_VECTOR(BranchProfileEntry)
 
-template <>
-struct yaml::MappingTraits<CSite> {
+template <> struct yaml::MappingTraits<CSite> {
   static void mapping(IO &io, CSite &cs) {
     io.mapRequired("Src", cs.src);
     io.mapRequired("Dst", cs.dst);
@@ -253,8 +247,7 @@ typedef struct GlobalWrapperS {
   uint64_t addr;
 } GlobalVarWrapper;
 
-template <>
-struct yaml::MappingTraits<GlobalVarWrapper> {
+template <> struct yaml::MappingTraits<GlobalVarWrapper> {
   static void mapping(IO &io, GlobalVarWrapper &gw) {
     io.mapRequired("name", gw.name);
     io.mapRequired("file_location", gw.fileLocation);
@@ -278,8 +271,7 @@ typedef struct TypeWrapperS {
   uint64_t constSize;
 } TypeWrapper;
 
-template <>
-struct yaml::MappingTraits<TypeWrapper> {
+template <> struct yaml::MappingTraits<TypeWrapper> {
   static void mapping(IO &io, TypeWrapper &tp) {
     io.mapRequired("tag", tp.tag);
     io.mapRequired("name", tp.name);
@@ -304,8 +296,7 @@ typedef struct FunctionDebugWrapperS {
   uint8_t isPublic;
 } FunctionDebugWrapper;
 
-template <>
-struct yaml::MappingTraits<FunctionDebugWrapper> {
+template <> struct yaml::MappingTraits<FunctionDebugWrapper> {
   static void mapping(IO &io, FunctionDebugWrapper &fw) {
     io.mapRequired("name", fw.funcName);
     io.mapRequired("file_location", fw.fileLocation);
@@ -394,9 +385,12 @@ struct FuzzIntrospector : public ModulePass {
   void recurseDerivedType(std::ofstream &O, DIDerivedType *T);
   void dumpDebugCompileUnits(std::ofstream &O, DebugInfoFinder &Finder);
   void dumpDebugFunctionsDebugInformation(std::ofstream &O,
-                                          DebugInfoFinder &Finder, std::string yamlTarget);
-  void dumpDebugAllTypes(std::ofstream &O, DebugInfoFinder &Finder, std::string);
-  void dumpDebugAllGlobalVariables(std::ofstream &O, DebugInfoFinder &Finder, std::string yamlOutFile);
+                                          DebugInfoFinder &Finder,
+                                          std::string yamlTarget);
+  void dumpDebugAllTypes(std::ofstream &O, DebugInfoFinder &Finder,
+                         std::string);
+  void dumpDebugAllGlobalVariables(std::ofstream &O, DebugInfoFinder &Finder,
+                                   std::string yamlOutFile);
 
   // Control flow analysis
   void analyzeControlFlow(Instruction *I);
@@ -656,7 +650,8 @@ void FuzzIntrospector::dumpDebugFunctionsDebugInformation(
 }
 
 void FuzzIntrospector::dumpDebugAllTypes(std::ofstream &O,
-                                         DebugInfoFinder &Finder, std::string allTypesYamlFile) {
+                                         DebugInfoFinder &Finder,
+                                         std::string allTypesYamlFile) {
   O << "## Types defined in module\n";
   std::vector<TypeWrapper> allTypesInModule;
 
@@ -679,7 +674,8 @@ void FuzzIntrospector::dumpDebugAllTypes(std::ofstream &O,
     } else {
       tp.tag = dwarf::TagString(T->getTag()).str();
     }
-    // tp.fileLocation = getFileLocation(T->getFilename(), T->getDirectory(), T->getLine());
+    // tp.fileLocation = getFileLocation(T->getFilename(), T->getDirectory(),
+    // T->getLine());
     tp.fileLocation = "";
     // std::string s1;
     if (!T->getDirectory().empty())
@@ -834,7 +830,8 @@ void FuzzIntrospector::dumpDebugAllGlobalVariables(std::ofstream &O,
 
     g_wrapper.fileLocation += GV->getFilename().str();
     if (GV->getLine())
-      g_wrapper.fileLocation = g_wrapper.fileLocation += ":" + to_string(GV->getLine());
+      g_wrapper.fileLocation = g_wrapper.fileLocation +=
+          ":" + to_string(GV->getLine());
 
     if (!GV->getLinkageName().empty()) {
       g_wrapper.linkage = GV->getLinkageName().str();
@@ -859,7 +856,8 @@ void FuzzIntrospector::dumpDebugAllGlobalVariables(std::ofstream &O,
  * Also applies some reasoning to it, e.g. dump additional information that is
  * related to functions, e.g. it's operands and alike.
  */
-void FuzzIntrospector::dumpDebugInformation(Module &M, std::string outputFile, std::string nextCalltreeFile) {
+void FuzzIntrospector::dumpDebugInformation(Module &M, std::string outputFile,
+                                            std::string nextCalltreeFile) {
   std::ofstream O;
   O.open(outputFile);
   O << "<--- Debug Information for Module 2.0 --->\n";
@@ -869,7 +867,8 @@ void FuzzIntrospector::dumpDebugInformation(Module &M, std::string outputFile, s
 
   dumpDebugCompileUnits(O, Finder);
   O << "\n";
-  std::string nextYamlAllDebugFunctions = nextCalltreeFile + ".debug_all_functions";
+  std::string nextYamlAllDebugFunctions =
+      nextCalltreeFile + ".debug_all_functions";
   dumpDebugFunctionsDebugInformation(O, Finder, nextYamlAllDebugFunctions);
   O << "\n";
   std::string nextYamlAllGlobals = nextCalltreeFile + ".debug_all_globals";
@@ -884,12 +883,12 @@ void FuzzIntrospector::makeDefaultConfig() {
   logPrintf(L2, "Using default configuration\n");
 
   std::vector<std::string> FuncsToAvoid = {
-      "^_ZNSt3",                  // mangled std::
-      "^_ZSt",                    // functions in std:: library
-      "^_ZNKSt",                  // std::__xxxbasic_string
-      "^_ZTv0_n24_NSt",           // Some virtual functions for basic streams, e.g.
-                                  // virtual thunk to std::__1::basic_ostream<char,
-                                  // std::__1::char_traits<char> >::~basic_ostream()
+      "^_ZNSt3",        // mangled std::
+      "^_ZSt",          // functions in std:: library
+      "^_ZNKSt",        // std::__xxxbasic_string
+      "^_ZTv0_n24_NSt", // Some virtual functions for basic streams, e.g.
+                        // virtual thunk to std::__1::basic_ostream<char,
+                        // std::__1::char_traits<char> >::~basic_ostream()
       "^_ZN18FuzzedDataProvider", // FuzzedDataProvider
       "^_Zd",                     // "operator delete(...)"
       "^_Zn",                     // operator new (...)"
@@ -918,8 +917,7 @@ void FuzzIntrospector::makeDefaultConfig() {
 
 void FuzzIntrospector::runIntrospectorOnNonFuzzerBinary(Module &M) {
   if (getenv("FUZZ_INTROSPECTOR_AUTO_FUZZ")) {
-    logPrintf(L1,
-              "Forcing analysis of all functions. This in auto-fuzz mode");
+    logPrintf(L1, "Forcing analysis of all functions. This in auto-fuzz mode");
 
     std::string TargetLogName;
     std::string RandomStr = GenRandom(10);
@@ -1554,6 +1552,18 @@ bool FuzzIntrospector::shouldAvoidFunction(Function *Func) {
   std::string TargetFunctionName = Func->getName().str();
 
   // Avoid by function name
+  if (TargetFunctionName.find("llvm.") != std::string::npos ||
+      TargetFunctionName.find("__asan") != std::string::npos ||
+      TargetFunctionName.find("__ubsan") != std::string::npos ||
+      TargetFunctionName.find("__msan") != std::string::npos) {
+    return true;
+  }
+
+  if (TargetFunctionName.find("_ZNKSt") != std::string::npos ||
+      TargetFunctionName.find("_ZNSt") != std::string::npos ||
+      TargetFunctionName.find("_ZSt") != std::string::npos) {
+    return true;
+  }
   for (auto &FuncToAvoidRegex : ConfigFuncsToAvoid) {
     Regex Re(FuncToAvoidRegex);
     if (Re.isValid()) {
@@ -1565,6 +1575,17 @@ bool FuzzIntrospector::shouldAvoidFunction(Function *Func) {
 
   // Avoid by source file
   std::string FuncFilename = getFunctionFilename(Func);
+  if (FuncFilename.find("/usr/include/") != std::string::npos ||
+      FuncFilename.find("include/c++/") != std::string::npos ||
+      FuncFilename.find("bits/") != std::string::npos ||
+      FuncFilename.find("ext/") != std::string::npos ||
+      FuncFilename.find("backward/") != std::string::npos ||
+      FuncFilename.find("/usr/lib/") != std::string::npos ||
+      FuncFilename.find("libcxx") != std::string::npos ||
+      FuncFilename.find("sys/") != std::string::npos ||
+      FuncFilename.empty()) {
+    return true;
+  }
   for (auto &FileToAvoid : ConfigFilesToAvoid) {
     Regex Re(FileToAvoid);
     if (Re.isValid()) {
@@ -1573,6 +1594,7 @@ bool FuzzIntrospector::shouldAvoidFunction(Function *Func) {
       }
     }
   }
+
   return false;
 }
 
@@ -1823,7 +1845,7 @@ FuzzerFunctionWrapper FuzzIntrospector::wrapFunction(Function *F) {
       if (isa<CallInst>(I) || isa<InvokeInst>(I)) {
         Function *CalledFunc = nullptr;
         unsigned NumOperands = 0;
-        
+
         if (CallInst *CI = dyn_cast<CallInst>(&I)) {
           CalledFunc = value2Func(CI->getCalledOperand());
           NumOperands = CI->getNumOperands();
@@ -1831,24 +1853,28 @@ FuzzerFunctionWrapper FuzzIntrospector::wrapFunction(Function *F) {
           CalledFunc = value2Func(II->getCalledOperand());
           NumOperands = II->getNumOperands();
         }
-        
+
         if (CalledFunc) {
           StringRef FuncName = CalledFunc->getName();
           // Check if it's a string comparison function
-          bool isStringCmpFunc = FuncName.contains("strcmp") || FuncName.contains("memcmp") || 
-                                 FuncName.contains("strncmp") || FuncName.contains("strcasecmp") || 
-                                 FuncName.contains("strstr") || FuncName.contains("strncasecmp") || 
-                                 FuncName.contains("cmp");
-          
+          bool isStringCmpFunc =
+              FuncName.contains("strcmp") || FuncName.contains("memcmp") ||
+              FuncName.contains("strncmp") || FuncName.contains("strcasecmp") ||
+              FuncName.contains("strstr") || FuncName.contains("strncasecmp") ||
+              FuncName.contains("cmp");
+
           if (isStringCmpFunc) {
             // Check all arguments for string literals
-            for (unsigned i = 0; i < NumOperands - 1; i++) { // -1 to skip the function itself
+            for (unsigned i = 0; i < NumOperands - 1;
+                 i++) { // -1 to skip the function itself
               Value *Arg = I.getOperand(i);
-              // Check if the argument is a global variable that points to a string literal
+              // Check if the argument is a global variable that points to a
+              // string literal
               if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Arg)) {
                 if (GV->hasInitializer()) {
                   Constant *Init = GV->getInitializer();
-                  if (ConstantDataArray *CDA = dyn_cast<ConstantDataArray>(Init)) {
+                  if (ConstantDataArray *CDA =
+                          dyn_cast<ConstantDataArray>(Init)) {
                     if (CDA->isString()) {
                       std::string Literal = CDA->getAsString().str();
                       // Remove null terminator
@@ -2024,7 +2050,8 @@ bool FuzzIntrospector::shouldRunIntrospector(Module &M) {
   return true;
 }
 
-void FuzzIntrospector::extractFuzzerReachabilityGraph(Module &M, std::string TargetFunction) {
+void FuzzIntrospector::extractFuzzerReachabilityGraph(
+    Module &M, std::string TargetFunction) {
   Function *FuzzEntryFunc = M.getFunction(TargetFunction);
   if (FuzzEntryFunc == nullptr) {
     return;
@@ -2142,7 +2169,6 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
         if (Side0Line > Side1Line) {
           std::swap(BranchSide0Val, BranchSide1Val);
         }
-
       }
 
       // Analyze control flow for this branch instruction
@@ -2152,13 +2178,13 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
       std::string rightOperand = "";
       int64_t immediateValue = 0;
       std::vector<int64_t> caseValues;
-      
+
       // Check if condition is a comparison instruction
       Value *Condition = BI->getCondition();
       if (CmpInst *CI = dyn_cast<CmpInst>(Condition)) {
         Value *LHS = CI->getOperand(0);
         Value *RHS = CI->getOperand(1);
-        
+
         // Check if LHS is a register (Instruction or Argument)
         bool lhsIsRegister = isa<Instruction>(LHS) || isa<Argument>(LHS);
         // Check if RHS is a register (Instruction or Argument)
@@ -2167,7 +2193,7 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
         bool rhsIsImmediate = isa<ConstantInt>(RHS);
         // Check if LHS is an immediate value
         bool lhsIsImmediate = isa<ConstantInt>(LHS);
-        
+
         if (lhsIsRegister && rhsIsImmediate) {
           // Register vs immediate comparison
           isRegisterImmediate = true;
@@ -2197,12 +2223,17 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
           rightOperand = getValueName(RHS);
         }
       }
-      
+
       // BranchSidesComplexity Entry_val(TrueSideString, *TrueSideFuncs,
       //                                 FalseSideString, *FalseSideFuncs);
-      BranchProfileEntry Entry = {BRstring, {BranchSide0Val, BranchSide1Val}, 
-                                 isRegisterImmediate, isRegisterRegister, 
-                                 leftOperand, rightOperand, immediateValue, caseValues};
+      BranchProfileEntry Entry = {BRstring,
+                                  {BranchSide0Val, BranchSide1Val},
+                                  isRegisterImmediate,
+                                  isRegisterRegister,
+                                  leftOperand,
+                                  rightOperand,
+                                  immediateValue,
+                                  caseValues};
       FuncBranchProfile.push_back(Entry);
     }
     // Check for switch statements.
@@ -2242,23 +2273,24 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
       std::string rightOperand = "";
       int64_t immediateValue = 0;
       std::vector<int64_t> caseValues;
-      
+
       // Check if switch value is a register (Instruction or Argument)
       Value *SwitchValue = SI->getCondition();
       if (isa<Instruction>(SwitchValue) || isa<Argument>(SwitchValue)) {
         isRegisterImmediate = true;
         leftOperand = getValueName(SwitchValue);
         rightOperand = "switch cases";
-        
+
         // Extract immediate values from switch cases
-        for (auto caseIt = SI->case_begin(); caseIt != SI->case_end(); ++caseIt) {
+        for (auto caseIt = SI->case_begin(); caseIt != SI->case_end();
+             ++caseIt) {
           const llvm::ConstantInt *CaseValue = caseIt->getCaseValue();
           if (CaseValue) {
             caseValues.push_back(CaseValue->getSExtValue());
           }
         }
       }
-      
+
       std::vector<BranchSide> SwitchBranchSides;
       for (auto &pr : Dest_pairs) {
         auto CurrDest = pr.first;
@@ -2266,9 +2298,10 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
         auto CurrDestString = DestStringsMap[CurrDest];
         SwitchBranchSides.push_back({CurrDestString, CurrFuncs});
       }
-      BranchProfileEntry Entry = {BRstring, SwitchBranchSides, 
-                                 isRegisterImmediate, isRegisterRegister, 
-                                 leftOperand, rightOperand, immediateValue, caseValues};
+      BranchProfileEntry Entry = {
+          BRstring,           SwitchBranchSides, isRegisterImmediate,
+          isRegisterRegister, leftOperand,       rightOperand,
+          immediateValue,     caseValues};
       FuncBranchProfile.push_back(Entry);
     }
   }
@@ -2418,7 +2451,8 @@ FuzzIntrospector::getBBDebugInfo(BasicBlock *BB, DILocation *PrevLoc) {
   BranchInst *CurrBI;
   Instruction *CurrTI, *CurrI;
   DILocation *CurrLoc;
-  /* TODO(David): Fix this for LLVM 21. Although I'm not 100% sure we still use this.*/
+  /* TODO(David): Fix this for LLVM 21. Although I'm not 100% sure we still use
+   * this.*/
   /*
     // Traverse all dummy BBs associated with the previous Loc.
     do {
