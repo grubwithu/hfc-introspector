@@ -2226,7 +2226,7 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
 
       // BranchSidesComplexity Entry_val(TrueSideString, *TrueSideFuncs,
       //                                 FalseSideString, *FalseSideFuncs);
-      if (isRegisterImmediate && (immediateValue != 0 || caseValues.size() > 0)) {
+      if (isRegisterImmediate && (immediateValue > 127 || immediateValue < -128)) {
         BranchProfileEntry Entry = {BRstring,
                                     {BranchSide0Val, BranchSide1Val},
                                     isRegisterImmediate,
