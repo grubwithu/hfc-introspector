@@ -1643,6 +1643,36 @@ int FuzzIntrospector::extractCalltree(
   return MaxDepthOfEdges;
 }
 
+
+inline static std::string base64Encode(const std::string &in) {
+  static const char kBase64Table[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+  std::string out;
+  int val = 0, valb = -6;
+
+  for (unsigned char c : in) {
+    val = (val << 8) + c;
+    valb += 8;
+    while (valb >= 0) {
+      out.push_back(kBase64Table[(val >> valb) & 0x3F]);
+      valb -= 6;
+    }
+  }
+
+  if (valb > -6) {
+    out.push_back(kBase64Table[((val << 8) >> (valb + 8)) & 0x3F]);
+  }
+
+  while (out.size() % 4) {
+    out.push_back('=');
+  }
+
+  return out;
+}
+
 // Wraps an LLVM function in a struct for conveniently outputting
 // to YAML. Also does minor meta-analysis, such as cyclomatic complexity
 // analysis.
@@ -1881,7 +1911,7 @@ FuzzerFunctionWrapper FuzzIntrospector::wrapFunction(Function *F) {
                       if (!Literal.empty() && Literal.back() == '\0') {
                         Literal.pop_back();
                       }
-                      FuncWrap.StringLiterals.push_back(Literal);
+                      FuncWrap.StringLiterals.push_back(base64Encode(Literal));
                     }
                   }
                 }
@@ -2300,11 +2330,14 @@ std::vector<BranchProfileEntry> FuzzIntrospector::branchProfiler(Function *F) {
         auto CurrDestString = DestStringsMap[CurrDest];
         SwitchBranchSides.push_back({CurrDestString, CurrFuncs});
       }
-      BranchProfileEntry Entry = {
-          BRstring,           SwitchBranchSides, isRegisterImmediate,
-          isRegisterRegister, leftOperand,       rightOperand,
-          immediateValue,     caseValues};
-      FuncBranchProfile.push_back(Entry);
+
+      if (caseValues.size() > 0) {
+        BranchProfileEntry Entry = {
+            BRstring,           SwitchBranchSides, isRegisterImmediate,
+            isRegisterRegister, leftOperand,       rightOperand,
+            immediateValue,     caseValues};
+        FuncBranchProfile.push_back(Entry);
+      }
     }
   }
 
